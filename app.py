@@ -41,7 +41,6 @@ with col1:
         school_rating = filtered_df['Overall_Rating'].values[0]
         if pd.notna(school_rating):
             st.metric("School Rating", f"{school_rating}")
-            
             rating_desc = {
                 1: "Level 1 - Highest Performance",
                 2: "Level 2 - Good Standing",
@@ -73,7 +72,6 @@ with col2:
             st.metric("Low Income Student Percentage", f"{low_income_pct:.1%}")
 
 st.subheader("ZIP Code Comparisons")
-
 comparison_zips = st.multiselect(
     "Compare with other ZIP codes",
     options=[zip_code for zip_code in sorted(df["ZipCode"].unique()) if zip_code != selected_zip],
@@ -92,7 +90,7 @@ if comparison_zips:
             labels={"average_housing_cost_2023": "Average Housing Price ($)", "ZipCode": "ZIP Code"}
         )
         st.plotly_chart(fig1, use_container_width=True)
-
+    
     if 'Total_Crimes' in comparison_data.columns:
         fig2 = px.bar(
             comparison_data,
@@ -102,7 +100,7 @@ if comparison_zips:
             labels={"Total_Crimes": "Total Crimes", "ZipCode": "ZIP Code"}
         )
         st.plotly_chart(fig2, use_container_width=True)
-
+    
     if 'Overall_Rating' in comparison_data.columns:
         fig3 = px.bar(
             comparison_data,
@@ -140,7 +138,7 @@ if 'School_Latitude' in df.columns and 'School_Longitude' in df.columns:
             title="Housing Costs Across Chicago"
         )
         st.plotly_chart(fig, use_container_width=True)
-    
+        
     elif map_option == "School Ratings" and 'Overall_Rating' in df.columns:
         fig = px.scatter_mapbox(
             map_df,
@@ -156,7 +154,7 @@ if 'School_Latitude' in df.columns and 'School_Longitude' in df.columns:
             title="School Ratings Across Chicago"
         )
         st.plotly_chart(fig, use_container_width=True)
-    
+        
     elif map_option == "Crime Rates" and 'Total_Crimes' in df.columns:
         fig = px.scatter_mapbox(
             map_df,
@@ -192,4 +190,5 @@ if 'average_housing_cost_2023' in df.columns and 'Total_Crimes' in df.columns:
 st.markdown("---")
 st.markdown("**Data Sources**: Chicago Housing Data, School Quality Metrics, and Crime Statistics")
 st.markdown("**Dashboard created by**: Your Name")
+
 
