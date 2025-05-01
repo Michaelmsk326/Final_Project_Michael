@@ -169,16 +169,80 @@ def load_models():
 
 @st.cache_data
 def load_geojson():
+    """Create or load GeoJSON file from the dataframe"""
     try:
-        geojson_path = "data/chicago_zipcodes.geojson"
-        if os.path.exists(geojson_path):
-            with open(geojson_path, 'r') as f:
+        json_dir = "data"
+        json_path = f"{json_dir}/chicago_zipcodes.geojson"
+        
+        # If GeoJSON already exists, load it
+        if os.path.exists(json_path):
+            with open(json_path, 'r') as f:
                 return json.load(f)
-        else:
-            st.warning(f"GeoJSON file not found: {geojson_path}")
+        
+        # Otherwise create it from the dataframe
+        if 'df' not in globals():
+            st.warning("DataFrame not available for creating GeoJSON")
             return None
+            
+        # Create directory if it doesn't exist
+        if not os.path.exists(json_dir):
+            os.makedirs(json_dir)
+            
+        # Check for required columns
+        if not all(col in df.columns for col in ['ZipCode', 'Latitude', 'Longitude']):
+            st.warning("Missing required columns for GeoJSON")
+            return None
+            
+        # Get unique ZIP codes with coordinates
+        zip_data = df[['ZipCode', 'Latitude', 'Longitude']].dropna().drop_duplicates()
+        
+        # Ensure proper types
+        zip_data['ZipCode'] = zip_data['ZipCode'].astype(str)
+        zip_data['Latitude'] = pd.to_numeric(zip_data['Latitude'], errors='coerce')
+        zip_data['Longitude'] = pd.to_numeric(zip_data['Longitude'], errors='coerce')
+        
+        # Remove invalid coordinates
+        zip_data = zip_data.dropna()
+        
+        # Create features list
+        features = []
+        for _, row in zip_data.iterrows():
+            # Validate coordinates
+            lat = float(row['Latitude'])
+            lng = float(row['Longitude'])
+            
+            if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+                continue
+                
+            feature = {
+                "type": "Feature",
+                "properties": {
+                    "ZIP": row['ZipCode']
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [lng, lat]
+                }
+            }
+            features.append(feature)
+        
+        if not features:
+            st.warning("No valid features created for GeoJSON")
+            return None
+            
+        # Create GeoJSON structure
+        geojson = {
+            "type": "FeatureCollection",
+            "features": features
+        }
+        
+        # Save to file
+        with open(json_path, 'w') as f:
+            json.dump(geojson, f)
+            
+        return geojson
     except Exception as e:
-        st.warning(f"Error loading GeoJSON: {str(e)}")
+        st.warning(f"Error creating/loading GeoJSON: {str(e)}")
         return None
 
 @st.cache_data
@@ -320,7 +384,9 @@ def create_simple_models(df):
 # Load data and models
 df = load_data()
 
-chicago_geojson = create_geojson_from_dataframe()
+chicago_geojson = load_geojson()
+
+chicago_geojson = create_geojson_from_dataframe(df)
 
 models = create_simple_models(df)
 
