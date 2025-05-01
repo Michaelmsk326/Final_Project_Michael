@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import numpy as np
-import os
-from PIL import Image
+import matplotlib.pyplot as plt
+import seaborn as sns
+import matplotlib.ticker as mticker
 
 # Page configuration
 st.set_page_config(page_title="Chicago Housing Dashboard", layout="wide")
@@ -75,25 +76,13 @@ with col2:
         low_income_pct = filtered_df['Low_Income_Percentage'].values[0]
         if pd.notna(low_income_pct):
             st.metric("Low Income Student Percentage", f"{low_income_pct:.1%}")
+        elif 'Student_Count_Low_Income' in filtered_df.columns and 'Student_Count_Total' in filtered_df.columns:
+            low_income = filtered_df['Student_Count_Low_Income'].values[0]
+            total = filtered_df['Student_Count_Total'].values[0]
+            if total > 0:
+                low_income_pct = low_income / total
+                st.metric("Low Income Student Percentage", f"{low_income_pct:.1%}")
 
-# Display PNG files section
-st.subheader("Visualizations")
-png_directory = "png_files"
-if os.path.exists(png_directory):
-    png_files = [f for f in os.listdir(png_directory) if f.endswith('.png')]
-    if png_files:
-        for png_file in png_files:
-            image_path = os.path.join(png_directory, png_file)
-            try:
-                image = Image.open(image_path)
-                st.image(image, caption=png_file.replace('.png', '').replace('_', ' ').title())
-            except Exception as e:
-                st.error(f"Error loading image {png_file}: {e}")
-    else:
-        st.write("No PNG files found in the directory.")
-else:
-    st.write("PNG files directory not found.")
-    
 # Visualization section
 st.subheader("ZIP Code Comparisons")
 
@@ -116,7 +105,7 @@ if comparison_zips:
             title="Housing Price Comparison",
             labels={"average_housing_cost_2023": "Average Housing Price ($)", "ZipCode": "ZIP Code"}
         )
-        st.plotly_chart(fig1)
+        st.plotly_chart(fig1, use_container_width=True)
     
     # Crime comparison
     if 'Total_Crimes' in comparison_data.columns:
@@ -127,4 +116,103 @@ if comparison_zips:
             title="Crime Comparison",
             labels={"Total_Crimes": "Total Crimes", "ZipCode": "ZIP Code"}
         )
-        st.plotly_chart(fig2)
+        st.plotly_chart(fig2, use_container_width=True)
+        
+    # School ratings comparison if available
+    if 'Overall_Rating' in comparison_data.columns:
+        fig3 = px.bar(
+            comparison_data,
+            x="ZipCode",
+            y="Overall_Rating",
+            title="School Rating Comparison (Lower is Better)",
+            labels={"Overall_Rating": "School Rating", "ZipCode": "ZIP Code"}
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+
+# Add a map visualization section
+st.subheader("Geographic Distribution")
+
+# Check if we have coordinates in the dataset
+if 'School_Latitude' in df.columns and 'School_Longitude' in df.columns:
+    st.write("Explore the geographic distribution of housing costs, school ratings, and crime across Chicago.")
+    
+    # Create a map dataframe with valid coordinates
+    map_df = df.dropna(subset=['School_Latitude', 'School_Longitude'])
+    
+    # Select what to visualize on the map
+    map_option = st.selectbox(
+        "Select data to visualize on map:",
+        ["Housing Costs", "School Ratings", "Crime Rates"]
+    )
+    
+    if map_option == "Housing Costs" and 'average_housing_cost_2023' in df.columns:
+        fig = px.scatter_mapbox(
+            map_df,
+            lat="School_Latitude",
+            lon="School_Longitude",
+            color="average_housing_cost_2023",
+            color_continuous_scale="Viridis",
+            size_max=15,
+            zoom=10,
+            mapbox_style="carto-positron",
+            hover_name="ZipCode",
+            hover_data={"School_Latitude": False, "School_Longitude": False},
+            title="Housing Costs Across Chicago"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+    elif map_option == "School Ratings" and 'Overall_Rating' in df.columns:
+        fig = px.scatter_mapbox(
+            map_df,
+            lat="School_Latitude",
+            lon="School_Longitude",
+            color="Overall_Rating",
+            color_continuous_scale="RdYlGn_r",  # Reversed so red is worse
+            size_max=15,
+            zoom=10,
+            mapbox_style="carto-positron",
+            hover_name="ZipCode",
+            hover_data={"School_Latitude": False, "School_Longitude": False},
+            title="School Ratings Across Chicago"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+    elif map_option == "Crime Rates" and 'Total_Crimes' in df.columns:
+        fig = px.scatter_mapbox(
+            map_df,
+            lat="School_Latitude",
+            lon="School_Longitude",
+            color="Total_Crimes",
+            color_continuous_scale="Reds",
+            size_max=15,
+            zoom=10,
+            mapbox_style="carto-positron",
+            hover_name="ZipCode",
+            hover_data={"School_Latitude": False, "School_Longitude": False},
+            title="Crime Rates Across Chicago"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+# Add insights section based on the analysis
+st.subheader("Data Insights")
+
+# Housing and crime correlation
+if 'average_housing_cost_2023' in df.columns and 'Total_Crimes' in df.columns:
+    correlation = df[['average_housing_cost_2023', 'Total_Crimes']].corr().iloc[0, 1]
+    st.write(f"Correlation between housing costs and crime rates: {correlation:.2f}")
+    
+    # Create scatter plot showing relationship
+    fig = px.scatter(
+        df,
+        x="Total_Crimes",
+        y="average_housing_cost_2023",
+        hover_name="ZipCode",
+        color="Overall_Rating" if "Overall_Rating" in df.columns else None,
+        title="Relationship Between Crime Rates and Housing Costs"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# Add footer with data sources
+st.markdown("---")
+st.markdown("**Data Sources**: Chicago Housing Data, School Quality Metrics, and Crime Statistics")
+st.markdown("**Dashboard created by**: Your Name")
