@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import numpy as np
+import os
+from PIL import Image
 
 # Page configuration
 st.set_page_config(page_title="Chicago Housing Dashboard", layout="wide")
@@ -73,6 +75,24 @@ with col2:
         low_income_pct = filtered_df['Low_Income_Percentage'].values[0]
         if pd.notna(low_income_pct):
             st.metric("Low Income Student Percentage", f"{low_income_pct:.1%}")
+
+# Display PNG files section
+st.subheader("Visualizations")
+png_directory = "png_files"
+if os.path.exists(png_directory):
+    png_files = [f for f in os.listdir(png_directory) if f.endswith('.png')]
+    if png_files:
+        for png_file in png_files:
+            image_path = os.path.join(png_directory, png_file)
+            try:
+                image = Image.open(image_path)
+                st.image(image, caption=png_file.replace('.png', '').replace('_', ' ').title())
+            except Exception as e:
+                st.error(f"Error loading image {png_file}: {e}")
+    else:
+        st.write("No PNG files found in the directory.")
+else:
+    st.write("PNG files directory not found.")
     
 # Visualization section
 st.subheader("ZIP Code Comparisons")
@@ -108,3 +128,4 @@ if comparison_zips:
             labels={"Total_Crimes": "Total Crimes", "ZipCode": "ZIP Code"}
         )
         st.plotly_chart(fig2)
+
