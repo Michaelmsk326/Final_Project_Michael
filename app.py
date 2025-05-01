@@ -5,23 +5,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.ticker as mticker
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-st.set_page_config(
-    page_title="Chicago Housing Dashboard",
-    layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'About': "Chicago Housing Data Dashboard"
-    },
-    theme={
-        "primaryColor": "#1E88E5",
-        "backgroundColor": "#F5F5F5",
-        "secondaryBackgroundColor": "#E0E0E0",
-        "textColor": "#212121",
-        "font": "sans serif"
-    }
-)
+st.set_page_config(page_title="Chicago Housing Dashboard", layout="wide")
 
 @st.cache_data
 def load_data():
@@ -32,238 +17,72 @@ df = load_data()
 
 st.title("Chicago Housing Dashboard")
 st.markdown("""
-This dashboard allows you to explore Chicago housing data by ZIP code,
+This dashboard allows you to explore Chicago housing data by ZIP code, 
 including housing prices, school quality metrics, and crime statistics.
 """)
 
 st.sidebar.header("Filter Options")
-
 selected_zip = st.sidebar.selectbox("Choose ZIP Code", sorted(df["ZipCode"].unique()))
-
-price_range = st.sidebar.slider(
-    "Housing Price Range ($)",
-    float(df["average_housing_cost_2023"].min()),
-    float(df["average_housing_cost_2023"].max()),
-    (float(df["average_housing_cost_2023"].min()), float(df["average_housing_cost_2023"].max()))
-)
-
-school_rating_options = st.sidebar.multiselect(
-    "School Rating",
-    options=[1, 2, 3],
-    default=[1, 2, 3],
-    help="1 = Highest Performance, 3 = Needs Improvement"
-)
-
-crime_threshold = st.sidebar.slider(
-    "Maximum Crime Rate",
-    0,
-    int(df["Total_Crimes"].max()),
-    int(df["Total_Crimes"].max())
-)
-
-income_range = st.sidebar.slider(
-    "Low Income Percentage",
-    0.0,
-    1.0,
-    (0.0, 1.0),
-    0.05,
-    format="%d%%"
-)
 
 filtered_df = df[df["ZipCode"] == selected_zip]
 
-st.header("Chicago Housing Overview")
-
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 with col1:
-    st.metric("Average Housing Price", f"${df['average_housing_cost_2023'].mean():,.2f}")
+    st.subheader("Housing Price Information")
+    if not filtered_df.empty and 'average_housing_cost_2023' in filtered_df.columns:
+        housing_price = filtered_df['average_housing_cost_2023'].values[0]
+        st.metric("Average Housing Price (2023)", f"${housing_price:,.2f}")
+    else:
+        st.write("No housing data available for this ZIP code.")
+
+    st.subheader("School Quality")
+    if not filtered_df.empty and 'Overall_Rating' in filtered_df.columns:
+        school_rating = filtered_df['Overall_Rating'].values[0]
+        if pd.notna(school_rating):
+            st.metric("School Rating", f"{school_rating}")
+            
+            rating_desc = {
+                1: "Level 1 - Highest Performance",
+                2: "Level 2 - Good Standing",
+                3: "Level 3 - Needs Improvement"
+            }
+            st.write(f"Rating Description: {rating_desc.get(school_rating, 'Not Rated')}")
+        else:
+            st.write("No school rating available for this ZIP code.")
+    else:
+        st.write("No school data available for this ZIP code.")
 
 with col2:
-    avg_rating = df['Overall_Rating'].mean()
-    st.metric("Average School Rating", f"{avg_rating:.2f}")
+    st.subheader("Crime Statistics")
+    if not filtered_df.empty and 'Total_Crimes' in filtered_df.columns:
+        crime_count = filtered_df['Total_Crimes'].values[0]
+        st.metric("Total Crimes", f"{crime_count:,.0f}")
+    else:
+        st.write("No crime data available for this ZIP code.")
 
-with col3:
-    st.metric("Average Crime Rate", f"{df['Total_Crimes'].mean():,.0f}")
+    if not filtered_df.empty and 'Low_Income_Percentage' in filtered_df.columns:
+        low_income_pct = filtered_df['Low_Income_Percentage'].values[0]
+        if pd.notna(low_income_pct):
+            st.metric("Low Income Student Percentage", f"{low_income_pct:.1%}")
+    elif 'Student_Count_Low_Income' in filtered_df.columns and 'Student_Count_Total' in filtered_df.columns:
+        low_income = filtered_df['Student_Count_Low_Income'].values[0]
+        total = filtered_df['Student_Count_Total'].values[0]
+        if total > 0:
+            low_income_pct = low_income / total
+            st.metric("Low Income Student Percentage", f"{low_income_pct:.1%}")
 
-st.subheader("Chicago ZIP Code Overview")
+st.subheader("ZIP Code Comparisons")
 
-if 'School_Latitude' in df.columns and 'School_Longitude' in df.columns:
-    fig = px.scatter_mapbox(
-        df,
-        lat="School_Latitude",
-        lon="School_Longitude",
-        color="average_housing_cost_2023",
-        size="SchoolCount" if "SchoolCount" in df.columns else None,
-        color_continuous_scale="Viridis",
-        zoom=9,
-        mapbox_style="carto-positron",
-        hover_name="ZipCode",
-        title="Chicago Housing Overview"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-tabs = st.tabs(["Housing Analysis", "School Quality", "Crime Statistics", "Correlations", "Prediction Models"])
-
-with tabs[0]:
-    st.header("Housing Price Analysis")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        fig = px.histogram(df, x="average_housing_cost_2023", nbins=20,
-                          title="Housing Cost Distribution")
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col2:
-        if 'School_Latitude' in df.columns and 'School_Longitude' in df.columns:
-            fig = px.scatter_mapbox(
-                df,
-                lat="School_Latitude",
-                lon="School_Longitude",
-                color="average_housing_cost_2023",
-                color_continuous_scale="Viridis",
-                zoom=10,
-                mapbox_style="carto-positron",
-                title="Housing Costs Across Chicago"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-with tabs[1]:
-    st.header("School Quality Analysis")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        fig = px.bar(
-            df['Overall_Rating'].value_counts().reset_index(),
-            x="index",
-            y="Overall_Rating",
-            title="Distribution of School Ratings",
-            labels={"index": "Rating", "Overall_Rating": "Count"}
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col2:
-        if 'School_Latitude' in df.columns and 'School_Longitude' in df.columns:
-            fig = px.scatter_mapbox(
-                df,
-                lat="School_Latitude",
-                lon="School_Longitude",
-                color="Overall_Rating",
-                color_continuous_scale="RdYlGn_r",
-                zoom=10,
-                mapbox_style="carto-positron",
-                title="School Ratings Across Chicago"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-with tabs[2]:
-    st.header("Crime Statistics")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        fig = px.histogram(df, x="Total_Crimes", nbins=20,
-                          title="Crime Distribution")
-        st.plotly_chart(fig, use_container_width=True)
-
-    with col2:
-        if 'School_Latitude' in df.columns and 'School_Longitude' in df.columns:
-            fig = px.scatter_mapbox(
-                df,
-                lat="School_Latitude",
-                lon="School_Longitude",
-                color="Total_Crimes",
-                color_continuous_scale="Reds",
-                zoom=10,
-                mapbox_style="carto-positron",
-                title="Crime Rates Across Chicago"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-with tabs[3]:
-    st.header("Data Correlations")
-
-    correlation = df[['average_housing_cost_2023', 'Total_Crimes']].corr().iloc[0, 1]
-    st.write(f"Correlation between housing costs and crime rates: {correlation:.2f}")
-
-    fig = px.scatter(
-        df,
-        x="Total_Crimes",
-        y="average_housing_cost_2023",
-        hover_name="ZipCode",
-        color="Overall_Rating" if "Overall_Rating" in df.columns else None,
-        title="Relationship Between Crime Rates and Housing Costs"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    fig = plt.figure(figsize=(12, 8))
-    plt.scatter(
-        df['Total_Crimes'],
-        df['average_housing_cost_2023'],
-        c=df['Overall_Rating'],
-        cmap='viridis',
-        alpha=0.7,
-        s=80
-    )
-    plt.colorbar(label='School Rating')
-    plt.title('Housing Cost vs. Crime Rate (colored by School Rating)')
-    plt.xlabel('Crime Rate')
-    plt.ylabel('Average Housing Cost ($)')
-    plt.grid(True, alpha=0.3)
-    st.pyplot(fig)
-
-    fig = plt.figure(figsize=(12, 8))
-    plt.scatter(
-        df['Low_Income_Percentage'] * 100,
-        df['average_housing_cost_2023'],
-        c=df['Overall_Rating'],
-        cmap='viridis',
-        alpha=0.7,
-        s=80
-    )
-    plt.colorbar(label='School Rating')
-    plt.title('Housing Cost vs. Low Income Percentage (colored by School Rating)')
-    plt.xlabel('Low Income Percentage (%)')
-    plt.ylabel('Average Housing Cost ($)')
-    plt.grid(True, alpha=0.3)
-    st.pyplot(fig)
-
-with tabs[4]:
-    st.header("Housing Price Prediction Models")
-
-    st.subheader("Feature Importance for Housing Price Prediction")
-
-    fig, ax = plt.figure(figsize=(12, 8)), plt.gca()
-
-    st.pyplot(fig)
-
-    st.subheader("Model Performance")
-    metrics_col1, metrics_col2 = st.columns(2)
-
-    st.subheader("Actual vs Predicted Housing Costs")
-    fig = plt.figure(figsize=(10, 6))
-    plt.xlabel('Actual Housing Cost')
-    plt.ylabel('Predicted Housing Cost')
-    plt.title('Actual vs Predicted Housing Costs')
-    st.pyplot(fig)
-
-    st.header("School Rating Prediction Models")
-
-    st.subheader("Feature Importance for School Rating Prediction")
-    fig, ax = plt.figure(figsize=(12, 8)), plt.gca()
-
-    st.pyplot(fig)
-
-st.sidebar.markdown("---")
-comparison_zips = st.sidebar.multiselect(
+comparison_zips = st.multiselect(
     "Compare with other ZIP codes",
     options=[zip_code for zip_code in sorted(df["ZipCode"].unique()) if zip_code != selected_zip],
     max_selections=5
 )
 
 if comparison_zips:
-    st.header("ZIP Code Comparisons")
     comparison_data = df[df["ZipCode"].isin([selected_zip] + comparison_zips)]
-
+    
     if 'average_housing_cost_2023' in comparison_data.columns:
         fig1 = px.bar(
             comparison_data,
@@ -293,6 +112,82 @@ if comparison_zips:
             labels={"Overall_Rating": "School Rating", "ZipCode": "ZIP Code"}
         )
         st.plotly_chart(fig3, use_container_width=True)
+
+st.subheader("Geographic Distribution")
+
+if 'School_Latitude' in df.columns and 'School_Longitude' in df.columns:
+    st.write("Explore the geographic distribution of housing costs, school ratings, and crime across Chicago.")
+    
+    map_df = df.dropna(subset=['School_Latitude', 'School_Longitude'])
+    
+    map_option = st.selectbox(
+        "Select data to visualize on map:",
+        ["Housing Costs", "School Ratings", "Crime Rates"]
+    )
+    
+    if map_option == "Housing Costs" and 'average_housing_cost_2023' in df.columns:
+        fig = px.scatter_mapbox(
+            map_df,
+            lat="School_Latitude",
+            lon="School_Longitude",
+            color="average_housing_cost_2023",
+            color_continuous_scale="Viridis",
+            size_max=15,
+            zoom=10,
+            mapbox_style="carto-positron",
+            hover_name="ZipCode",
+            hover_data={"School_Latitude": False, "School_Longitude": False},
+            title="Housing Costs Across Chicago"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    elif map_option == "School Ratings" and 'Overall_Rating' in df.columns:
+        fig = px.scatter_mapbox(
+            map_df,
+            lat="School_Latitude",
+            lon="School_Longitude",
+            color="Overall_Rating",
+            color_continuous_scale="RdYlGn_r",
+            size_max=15,
+            zoom=10,
+            mapbox_style="carto-positron",
+            hover_name="ZipCode",
+            hover_data={"School_Latitude": False, "School_Longitude": False},
+            title="School Ratings Across Chicago"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    elif map_option == "Crime Rates" and 'Total_Crimes' in df.columns:
+        fig = px.scatter_mapbox(
+            map_df,
+            lat="School_Latitude",
+            lon="School_Longitude",
+            color="Total_Crimes",
+            color_continuous_scale="Reds",
+            size_max=15,
+            zoom=10,
+            mapbox_style="carto-positron",
+            hover_name="ZipCode",
+            hover_data={"School_Latitude": False, "School_Longitude": False},
+            title="Crime Rates Across Chicago"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+st.subheader("Data Insights")
+
+if 'average_housing_cost_2023' in df.columns and 'Total_Crimes' in df.columns:
+    correlation = df[['average_housing_cost_2023', 'Total_Crimes']].corr().iloc[0, 1]
+    st.write(f"Correlation between housing costs and crime rates: {correlation:.2f}")
+    
+    fig = px.scatter(
+        df,
+        x="Total_Crimes",
+        y="average_housing_cost_2023",
+        hover_name="ZipCode",
+        color="Overall_Rating" if "Overall_Rating" in df.columns else None,
+        title="Relationship Between Crime Rates and Housing Costs"
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("---")
 st.markdown("**Data Sources**: Chicago Housing Data, School Quality Metrics, and Crime Statistics")
