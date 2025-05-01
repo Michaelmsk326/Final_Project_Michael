@@ -63,68 +63,79 @@ def load_data():
         file_path = "merged_output/final_merged_dataset.csv"
         if not os.path.exists(file_path):
             st.error(f"Data file not found: {file_path}")
-            # Return sample dataframe (code as before)
+            return create_sample_data()
             
         df = pd.read_csv(file_path)
         
-        # 1. Extract average housing price for 2023 (average of all 2023 columns)
+        # 1. Process Overall_Rating - convert from format like "Level 1+" to numeric
+        if 'Overall_Rating' in df.columns:
+            # Save original for display
+            df['Rating_Description'] = df['Overall_Rating'].copy()
+            
+            # Convert rating to numeric (1, 2, or 3)
+            def parse_rating(val):
+                if pd.isna(val):
+                    return np.nan
+                if isinstance(val, (int, float)):
+                    return float(val)
+                
+                # Extract the numeric part from "Level X" or "Level X+"
+                if 'Level 1' in str(val):
+                    return 1.0
+                elif 'Level 2' in str(val):
+                    return 2.0
+                elif 'Level 3' in str(val):
+                    return 3.0
+                return np.nan
+            
+            df['Overall_Rating'] = df['Overall_Rating'].apply(parse_rating)
+            st.info("Converted school ratings from text to numeric values")
+        
+        # 2. Calculate average housing price for 2023
         year_2023_cols = [col for col in df.columns if col.startswith('2023-')]
         if year_2023_cols:
+            # Convert to numeric first to handle any non-numeric values
+            for col in year_2023_cols:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
             df['average_housing_cost_2023'] = df[year_2023_cols].mean(axis=1)
-        else:
-            st.warning("No 2023 housing price data found. Using most recent available data.")
-            # Try to find the most recent year data available
-            all_date_cols = [col for col in df.columns if '-' in col and col[0].isdigit()]
-            if all_date_cols:
-                most_recent_cols = sorted(all_date_cols, reverse=True)[:12]  # Last 12 months
-                df['average_housing_cost_2023'] = df[most_recent_cols].mean(axis=1)
-            else:
-                df['average_housing_cost_2023'] = np.nan
         
-        # 2. Calculate Low Income Percentage
+        # 3. Calculate Low Income Percentage
         if 'Student_Count_Low_Income' in df.columns and 'Student_Count_Total' in df.columns:
-            # Avoid division by zero
+            # Convert to numeric and handle division by zero
+            df['Student_Count_Low_Income'] = pd.to_numeric(df['Student_Count_Low_Income'], errors='coerce')
+            df['Student_Count_Total'] = pd.to_numeric(df['Student_Count_Total'], errors='coerce')
+            
+            # Calculate percentage safely
             df['Low_Income_Percentage'] = df.apply(
                 lambda row: row['Student_Count_Low_Income'] / row['Student_Count_Total'] 
-                if row['Student_Count_Total'] > 0 else 0, 
+                if pd.notna(row['Student_Count_Total']) and row['Student_Count_Total'] > 0 
+                else np.nan, 
                 axis=1
             )
-        else:
-            df['Low_Income_Percentage'] = np.nan
-            st.warning("Student count data not found. Low income percentage set to N/A.")
         
-        # 3. Make sure all required columns are present and have the right names
-        required_columns = ['ZipCode', 'Latitude', 'Longitude', 
-                           'average_housing_cost_2023', 'Overall_Rating',
-                           'Total_Crimes', 'Low_Income_Percentage']
-        
-        # ZipCode might be in different formats
-        if 'ZipCode' not in df.columns and 'Zip' in df.columns:
-            df['ZipCode'] = df['Zip']
-        elif 'ZipCode' not in df.columns and 'Zip Code' in df.columns:
-            df['ZipCode'] = df['Zip Code']
-        
-        # Check if any columns are still missing
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            st.warning(f"Missing required columns in dataset: {', '.join(missing_columns)}")
-            # Add placeholder columns if needed
-            for col in missing_columns:
-                df[col] = np.nan
+        # 4. Ensure numeric types for all key columns
+        numeric_cols = ['Latitude', 'Longitude', 'Total_Crimes', 'average_housing_cost_2023', 'Low_Income_Percentage']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
         
         return df
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
-        # Return a minimal dataset to prevent app crashes
-        return pd.DataFrame({
-            'ZipCode': [60601],
-            'average_housing_cost_2023': [400000],
-            'Overall_Rating': [2.0],
-            'Total_Crimes': [1000],
-            'Low_Income_Percentage': [0.25],
-            'Latitude': [41.8781],
-            'Longitude': [-87.6298]
-        })
+        return create_sample_data()
+
+def create_sample_data():
+    """Create a minimal sample dataset if loading fails"""
+    return pd.DataFrame({
+        'ZipCode': ['60601', '60602', '60603'],
+        'average_housing_cost_2023': [340000.0, 380000.0, 420000.0],
+        'Overall_Rating': [1.0, 2.0, 1.0],
+        'Total_Crimes': [1568.0, 378.0, 400.0],
+        'Low_Income_Percentage': [0.25, 0.35, 0.2],
+        'Latitude': [41.8858, 41.8829, 41.8807],
+        'Longitude': [-87.6181, -87.6321, -87.6251]
+    })
 
 @st.cache_resource
 def load_models():
@@ -172,128 +183,151 @@ def load_geojson():
 
 @st.cache_data
 def create_geojson_from_dataframe(df):
-    """Create a GeoJSON file directly from the dataframe with ZIP codes and coordinates"""
-    if df.empty:
-        return None
+    """Create a GeoJSON file from the dataframe with proper error handling"""
+    try:
+        json_dir = "data"
+        json_path = f"{json_dir}/chicago_zipcodes.geojson"
         
-    json_dir = "data"
-    json_path = f"{json_dir}/chicago_zipcodes.geojson"
-    
-    # Create directory if it doesn't exist
-    if not os.path.exists(json_dir):
-        os.makedirs(json_dir)
-    
-    # Create GeoJSON features from dataframe
-    features = []
-    
-    # Get unique ZIP codes with their coordinates
-    zip_data = df[['ZipCode', 'Latitude', 'Longitude']].drop_duplicates()
-    
-    for _, row in zip_data.iterrows():
-        zip_code = row['ZipCode']
-        lat = row['Latitude']
-        lng = row['Longitude']
-        
-        # Skip rows with missing coordinates
-        if pd.isna(lat) or pd.isna(lng):
-            continue
+        # Create directory if it doesn't exist
+        if not os.path.exists(json_dir):
+            os.makedirs(json_dir)
             
-        feature = {
-            "type": "Feature",
-            "properties": {
-                "ZIP": str(int(zip_code))
-            },
-            "geometry": {
-                "type": "Point",
-                "coordinates": [float(lng), float(lat)]
+        # Check for required columns and convert to proper types
+        if not all(col in df.columns for col in ['ZipCode', 'Latitude', 'Longitude']):
+            st.warning("Missing required columns for GeoJSON")
+            return None
+            
+        # Get unique ZIP codes with coordinates
+        zip_data = df[['ZipCode', 'Latitude', 'Longitude']].dropna().drop_duplicates()
+        
+        # Ensure proper types
+        zip_data['ZipCode'] = zip_data['ZipCode'].astype(str)
+        zip_data['Latitude'] = pd.to_numeric(zip_data['Latitude'], errors='coerce')
+        zip_data['Longitude'] = pd.to_numeric(zip_data['Longitude'], errors='coerce')
+        
+        # Remove invalid coordinates
+        zip_data = zip_data.dropna()
+        
+        # Create features list
+        features = []
+        for _, row in zip_data.iterrows():
+            # Validate coordinates
+            lat = float(row['Latitude'])
+            lng = float(row['Longitude'])
+            
+            if not (-90 <= lat <= 90) or not (-180 <= lng <= 180):
+                continue
+                
+            feature = {
+                "type": "Feature",
+                "properties": {
+                    "ZIP": row['ZipCode']
+                },
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [lng, lat]
+                }
             }
+            features.append(feature)
+        
+        if not features:
+            st.warning("No valid features created for GeoJSON")
+            return None
+            
+        # Create GeoJSON structure
+        geojson = {
+            "type": "FeatureCollection",
+            "features": features
         }
-        features.append(feature)
-    
-    # Create GeoJSON structure
-    geojson = {
-        "type": "FeatureCollection",
-        "features": features
-    }
-    
-    # Save as GeoJSON file
-    with open(json_path, 'w') as f:
-        json.dump(geojson, f)
-    
-    return geojson
+        
+        # Save to file
+        with open(json_path, 'w') as f:
+            json.dump(geojson, f)
+            
+        return geojson
+    except Exception as e:
+        st.warning(f"Error creating GeoJSON: {str(e)}")
+        return None
 
 # Add this function to create simple models from your data
 @st.cache_resource
 def create_simple_models(df):
-    if df.empty:
-        return {}
-        
     models = {}
-    models_dir = "models"
     
-    # Create models directory if it doesn't exist
+    # Create models directory
+    models_dir = "models"
     if not os.path.exists(models_dir):
         os.makedirs(models_dir)
     
     # Create housing price model
     housing_model_path = f"{models_dir}/housing_price_model.json"
-    if not os.path.exists(housing_model_path):
-        try:
-            features = ['Total_Crimes', 'Low_Income_Percentage', 'Overall_Rating']
-            target = 'average_housing_cost_2023'
+    try:
+        features = ['Total_Crimes', 'Low_Income_Percentage', 'Overall_Rating']
+        target = 'average_housing_cost_2023'
+        
+        if all(col in df.columns for col in features + [target]):
+            # Prepare the data - ensure all numeric and complete
+            model_df = df[features + [target]].copy()
             
-            # Check if we have required data
-            if all(col in df.columns for col in features + [target]):
-                # Get rows with no missing values
-                data = df[features + [target]].dropna()
+            for col in model_df.columns:
+                model_df[col] = pd.to_numeric(model_df[col], errors='coerce')
+            
+            # Drop missing values
+            model_df = model_df.dropna()
+            
+            if len(model_df) >= 10:
+                X = model_df[features]
+                y = model_df[target]
                 
-                if len(data) >= 10:  # Need enough data points
-                    X = data[features]
-                    y = data[target]
-                    
-                    # Train a simple XGBoost model
-                    model = xgb.XGBRegressor(n_estimators=50, learning_rate=0.1)
-                    model.fit(X, y)
-                    model.save_model(housing_model_path)
-                    
-                    models['housing'] = model
-                    st.success("Created housing price model")
-        except Exception as e:
-            st.warning(f"Could not create housing model: {e}")
+                model = xgb.XGBRegressor(n_estimators=50, learning_rate=0.1)
+                model.fit(X, y)
+                model.save_model(housing_model_path)
+                
+                models['housing'] = model
+                st.success("Created housing price prediction model")
+    except Exception as e:
+        st.warning(f"Could not create housing model: {str(e)}")
     
-    # Create school rating model (similar approach)
+    # Similar approach for school rating model
     school_model_path = f"{models_dir}/school_rating_model.json"
-    if not os.path.exists(school_model_path):
-        try:
-            features = ['Low_Income_Percentage', 'Total_Crimes']
-            target = 'Overall_Rating'
+    try:
+        features = ['Low_Income_Percentage', 'Total_Crimes']
+        target = 'Overall_Rating'
+        
+        if all(col in df.columns for col in features + [target]):
+            model_df = df[features + [target]].copy()
             
-            if all(col in df.columns for col in features + [target]):
-                data = df[features + [target]].dropna()
+            for col in model_df.columns:
+                model_df[col] = pd.to_numeric(model_df[col], errors='coerce')
+            
+            model_df = model_df.dropna()
+            
+            if len(model_df) >= 10:
+                X = model_df[features]
+                y = model_df[target]
                 
-                if len(data) >= 10:
-                    X = data[features]
-                    y = data[target]
-                    
-                    model = xgb.XGBRegressor(n_estimators=50, learning_rate=0.1)
-                    model.fit(X, y)
-                    model.save_model(school_model_path)
-                    
-                    models['school'] = model
-                    st.success("Created school rating model")
-        except Exception as e:
-            st.warning(f"Could not create school model: {e}")
+                model = xgb.XGBRegressor(n_estimators=50, learning_rate=0.1)
+                model.fit(X, y)
+                model.save_model(school_model_path)
+                
+                models['school'] = model
+                st.success("Created school rating prediction model")
+    except Exception as e:
+        st.warning(f"Could not create school model: {str(e)}")
     
     return models
 
 # Load data and models
 df = load_data()
+
+chicago_geojson = create_geojson_from_dataframe()
+
 models = create_simple_models(df)
 
 if not models:
     models = load_models()
     
-chicago_geojson = create_geojson_from_dataframe()
+
 
 # Get models or set to None if not available
 housing_model = models.get('housing')
