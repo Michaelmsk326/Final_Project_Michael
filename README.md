@@ -1,5 +1,5 @@
 # 377_Final_Dashboard_RE
-## Website: https://finalprojectmichael-jycomappwpcg6yc4wbd8gxs.streamlit.app/
+## Website: [https://finalprojectmichael-jycomappwpcg6yc4wbd8gxs.streamlit.app/](https://finalprojectmichael.streamlit.app/)
 
 # Chicago Neighborhood Analysis: Crime, Housing Prices & School Ratings
 
