@@ -384,9 +384,10 @@ def create_simple_models(df):
 # Load data and models
 df = load_data()
 
-chicago_geojson = load_geojson()
-
-chicago_geojson = create_geojson_from_dataframe(df)
+if os.path.exists("data/chicago_zipcodes.geojson"):
+    chicago_geojson = load_geojson()
+else:
+    chicago_geojson = create_geojson_from_dataframe(df)
 
 models = create_simple_models(df)
 
@@ -632,14 +633,17 @@ with tab2:
         
         if time_columns and not filtered_df.empty:
             time_data = filtered_df[time_columns].T.reset_index()
-            time_data.columns = ['Date', 'Price']
+            # Dynamically handle column naming based on actual shape
+            new_columns = ['Date'] + [f'Property_{i+1}' for i in range(len(time_data.columns)-1)]
+            time_data.columns = new_columns
             time_data['Date'] = pd.to_datetime(time_data['Date'])
             
+            # Use all property columns
             fig = px.line(
                 time_data,
                 x='Date',
-                y='Price',
-                title=f"Housing Price Trend for ZIP {selected_zip}",
+                y=time_data.columns[1:],  # Use all property columns
+                title=f"Housing Price Trends for ZIP {selected_zip}",
                 labels={'Price': 'Housing Price ($)', 'Date': 'Date'},
             )
             fig.update_layout(
@@ -838,42 +842,7 @@ with tab3:
                     fill_color=color,
                     fill_opacity=0.6,
                     popup=folium.Popup(popup_content, max_width=300)
-                ).add_to(m)
-        
-        # Add choropleth layer if GeoJSON available
-        if chicago_geojson is not None:
-            try:
-            # Try to determine the correct property key for ZIP codes
-                geojson_properties = list(chicago_geojson['features'][0]['properties'].keys())
-                zip_key = next((k for k in geojson_properties if k.lower() in ['zip', 'zipcode', 'zip_code']), None)
-                
-                if zip_key:
-                    # Create choropleth layer
-                    choropleth = folium.Choropleth(
-                        geo_data=chicago_geojson,
-                        name='choropleth',
-                        data=map_data,
-                        columns=['ZipCode', color_col],
-                        key_on=f'feature.properties.{zip_key}',
-                        fill_color=colormap,
-                        fill_opacity=0.7,
-                        line_opacity=0.2,
-                        legend_name=map_metric
-                    ).add_to(m)
-                    
-                    # Add tooltips
-                    choropleth.geojson.add_child(
-                        folium.features.GeoJsonTooltip(
-                            fields=[zip_key],
-                            aliases=['ZIP Code:'],
-                            style=("background-color: white; color: #333333; font-family: arial; font-size: 12px; padding: 10px;")
-                        )
-                    )
-                else:
-                    st.warning("Could not determine ZIP code property in GeoJSON file.")
-            except Exception as e:
-                st.warning(f"Error creating choropleth map: {e}")
-        
+                ).add_to(m)        
         # Display the map
         folium_static(m)
     
@@ -940,8 +909,24 @@ with tab4:
     
     if len(compare_zips) > 0:
         # Filter data for selected ZIP codes
-        comparison_df = df[df['ZipCode'].isin(compare_zips)]
+        comparison_df = df[df['ZipCode'].isin(compare_zips)].copy()
         
+        # IMPORTANT FIX: Aggregate by ZIP code to avoid duplicates
+        agg_functions = {
+            'average_housing_cost_2023': 'mean',
+            'Overall_Rating': 'mean',
+            'Total_Crimes': 'mean',
+            'Low_Income_Percentage': 'mean'
+        }
+        
+        # Only include columns that exist
+        agg_columns = {col: func for col, func in agg_functions.items() 
+                      if col in comparison_df.columns}
+        
+        # Group by ZIP code and aggregate
+        comparison_agg = comparison_df.groupby('ZipCode').agg(agg_columns).reset_index()
+        
+        # Rest of the code stays the same, but use comparison_agg instead of comparison_df
         col1, col2 = st.columns(2)
         
         with col1:
@@ -950,7 +935,7 @@ with tab4:
             
             if 'average_housing_cost_2023' in comparison_df.columns:
                 fig = px.bar(
-                    comparison_df,
+                    comparison_agg,
                     x='ZipCode',
                     y='average_housing_cost_2023',
                     title="Average Housing Price by ZIP Code",
@@ -1025,14 +1010,14 @@ with tab4:
         st.subheader("ZIP Code Comparison Radar Chart")
         
         # Fix for radar chart (in Tab 4):
-        if (all(col in comparison_df.columns for col in ['average_housing_cost_2023', 'Overall_Rating', 'Total_Crimes', 'Low_Income_Percentage']) and
-            not comparison_df['average_housing_cost_2023'].isna().all() and
-            not comparison_df['Overall_Rating'].isna().all() and
-            not comparison_df['Total_Crimes'].isna().all() and
-            not comparison_df['Low_Income_Percentage'].isna().all()):
+        if (all(col in comparison_agg.columns for col in ['average_housing_cost_2023', 'Overall_Rating', 'Total_Crimes', 'Low_Income_Percentage']) and
+                not comparison_agg['average_housing_cost_2023'].isna().all() and
+                not comparison_agg['Overall_Rating'].isna().all() and
+                not comparison_agg['Total_Crimes'].isna().all() and
+                not comparison_agg['Low_Income_Percentage'].isna().all()):
             
             # Normalize the data for radar chart
-            radar_df = comparison_df.copy()
+            radar_df = comparison_agg.copy()
             
             # Safe normalization function that handles zero ranges
             def safe_normalize(series, invert=False):
