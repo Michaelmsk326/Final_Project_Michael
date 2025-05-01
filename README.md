@@ -6,6 +6,8 @@
 ## Project Overview  
 This repository analyzes how public‐safety, housing market values, and school quality co‐vary across Chicago ZIP Codes. We merge police‐reported incident counts, Zillow home‐value indices, and state school‐rating data, then train predictive models and visualize geographic and statistical relationships.
 
+## **Important**: Must run project(4) before project(3) 
+
 ---
 
 ## Repository Contents  
